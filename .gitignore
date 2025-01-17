@@ -1,0 +1,5 @@
+/target
+deps/*.k
+deps/*.dll
+deps/*.lib
+.vscode/settings.json

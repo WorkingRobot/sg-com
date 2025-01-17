@@ -1,0 +1,10 @@
+[package]
+name = "sg-com"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[build-dependencies]
+bindgen = "0.71.0"
+copy_to_output = "2.1.0"
