@@ -1,17 +1,11 @@
-use std::{
-    fs::File,
-    io::BufWriter,
-    sync::{Arc, Mutex, OnceLock},
-};
-
+use crate::com::{self, SGContext, SG_SampleRate, SG_SampleType};
 use bevy::{log, prelude::*};
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    SampleFormat, StreamConfig,
+    SampleFormat, SampleRate, StreamConfig,
 };
-use hound::WavSpec;
-
-use crate::com::{self, SGContext, SG_SampleRate, SG_SampleType};
+use crossbeam_deque::Worker;
+use std::sync::Mutex;
 
 pub struct FacialAnimPlugin;
 
@@ -26,10 +20,10 @@ impl Plugin for FacialAnimPlugin {
 pub struct FacialAnim {
     context: &'static SGContext,
     player: com::Player,
-    stream: OnceLock<Mutex<SendStream>>,
+    stream: Mutex<SendStream>,
+    out_stream: Mutex<SendStream>,
     pub processed_data: Option<Vec<Vec<f32>>>,
     pub names: Vec<(String, Vec<String>)>,
-    wav_writer: Arc<Mutex<hound::WavWriter<BufWriter<File>>>>,
 }
 
 struct SendStream(cpal::Stream);
@@ -51,6 +45,10 @@ impl FacialAnim {
         log::info!("Input device: {}", input.name().unwrap());
         log::info!("Input config: {:?}", input_config);
 
+        let output = host
+            .default_output_device()
+            .expect("No output device available");
+
         let com_sample_type = match input_config.sample_format() {
             SampleFormat::I8 => SG_SampleType::SG_SAMPLE_PCM8,
             SampleFormat::I16 => SG_SampleType::SG_SAMPLE_PCM16,
@@ -71,27 +69,40 @@ impl FacialAnim {
         let stream_player = player.clone();
         let stream_config: StreamConfig = input_config.clone().into();
 
-        let writer = hound::WavWriter::create(
-            "output.wav",
-            WavSpec {
-                channels: 1,
-                sample_rate: input_config.sample_rate().0,
-                bits_per_sample: input_config.sample_format().sample_size() as u16 * 8,
-                sample_format: hound::SampleFormat::Float,
-            },
-        )
-        .unwrap();
+        let producer = Worker::<f32>::new_lifo();
 
-        let ret = Self {
-            context: ctx,
-            names: player.processed_names(),
-            player,
-            stream: OnceLock::default(),
-            processed_data: None,
-            wav_writer: Arc::new(Mutex::new(writer)),
+        let consumer = producer.stealer();
+        let output_config = StreamConfig {
+            channels: 2,
+            sample_rate: SampleRate(44100),
+            buffer_size: cpal::BufferSize::Default,
         };
+        let s = output
+            .build_output_stream(
+                &output_config,
+                move |data: &mut [f32], _| {
+                    let sample_count = data.len() / 2;
+                    let data_to_take = sample_count * 48000 / 44100;
+                    let mut ret = Vec::with_capacity(data_to_take);
+                    for _ in 0..data_to_take {
+                        let v = match consumer.steal() {
+                            crossbeam_deque::Steal::Success(d) => d,
+                            _ => 0.0,
+                        };
+                        ret.push(v);
+                    }
+                    let idx_dist = sample_count as f32 / data_to_take as f32;
+                    for i in 0..sample_count {
+                        let idx = (i as f32 / idx_dist) as usize;
+                        data[i * 2] = ret[idx];
+                        data[i * 2 + 1] = ret[idx];
+                    }
+                },
+                err_fn,
+                None,
+            )
+            .expect("Failed to build output stream");
 
-        let stream_writer = ret.wav_writer.clone();
         let stream = match com_sample_type {
             SG_SampleType::SG_SAMPLE_PCM8 => input.build_input_stream(
                 &stream_config,
@@ -126,15 +137,9 @@ impl FacialAnim {
             SG_SampleType::SG_SAMPLE_FLOAT32 => input.build_input_stream(
                 &stream_config,
                 move |data: &[f32], _| {
-                    {
-                        let mut lock = stream_writer.lock().unwrap();
-                        for sample in data {
-                            lock.write_sample(*sample).unwrap();
-                        }
-                        lock.flush().unwrap();
+                    for s in data {
+                        producer.push(*s);
                     }
-                    info!("Wrote {} samples", data.len());
-
                     stream_player
                         .add_input_float32(&mut data.to_vec())
                         .expect("Failed to add input");
@@ -155,7 +160,14 @@ impl FacialAnim {
         }
         .expect("Failed to build input stream");
 
-        let _ = ret.stream.set(Mutex::new(SendStream(stream)));
+        let ret = Self {
+            context: ctx,
+            names: player.processed_names(),
+            player,
+            stream: Mutex::new(SendStream(stream)),
+            out_stream: Mutex::new(SendStream(s)),
+            processed_data: None,
+        };
 
         ret
     }
@@ -164,18 +176,22 @@ impl FacialAnim {
 fn process_data(mut anim: ResMut<FacialAnim>, time: Res<Time>, mut started_capturing: Local<bool>) {
     if !*started_capturing {
         anim.stream
-            .get()
-            .unwrap()
             .lock()
             .unwrap()
             .0
             .play()
             .expect("Failed to begin microphone capture");
 
+        anim.out_stream
+            .lock()
+            .unwrap()
+            .0
+            .play()
+            .expect("Failed to begin speaker output");
+
         *started_capturing = true;
         return;
     }
     let output = anim.player.process(time.delta()).unwrap();
     anim.processed_data = Some(output);
-    info!("Processed");
 }

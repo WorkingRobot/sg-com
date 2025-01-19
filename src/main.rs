@@ -183,5 +183,4 @@ fn run_anim(
     {
         weights[morph_index] = processed_data[node_index][channel_index];
     }
-    info!("Written weights");
 }
