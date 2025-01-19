@@ -11,6 +11,10 @@ fn main() {
     println!("cargo:rustc-link-search={}", deps_path.to_str().unwrap());
     println!("cargo:rustc-link-lib=dylib=SG_Com");
 
+    std::env::set_var(
+        "LIBCLANG_PATH",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\Llvm\\x64\\bin\\",
+    );
     let bindings = bindgen::Builder::default()
         .header(deps_path.join("SG_Com.h").to_str().unwrap())
         .merge_extern_blocks(true)

@@ -10,4 +10,4 @@ From an old Fortnite install where SG Com was still used:
 
 ## License
 
-This source code (including the ad-hok `deps/SG_Com.h`) is under the MIT license. Any assets not provided in this repository (like `SG_Com.dll` and all `.k` files) are IP of [Speech Graphics](https://www.speech-graphics.com), so distributing them is at your own discretion. See [LICENSE](LICENSE) for more information.
+This source code (including the ad-hoc `deps/SG_Com.h`) is under the MIT license. Any assets not provided in this repository (like `SG_Com.dll` and all `.k` files) are IP of [Speech Graphics](https://www.speech-graphics.com), so distributing them is at your own discretion. See [LICENSE](LICENSE) for more information.

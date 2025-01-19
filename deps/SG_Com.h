@@ -21,7 +21,7 @@
 
 typedef enum {
     SG_ERROR_OK, /// No error
-    SG_ERROR_BUFFER_OVERFLOW, /// Buffer is too short
+    SG_ERROR_LOW_MEMORY, ///< A low memory condition was detected.
     SG_ERROR_UNKNOWN0,
     SG_ERROR_LICENSE_INIT, /// Error initializing licensing
     SG_ERROR_UNKNOWN1,
@@ -34,6 +34,7 @@ typedef enum {
     SG_ERROR_INVALID_USER_ID, /// Invalid user ID
     SG_ERROR_INVALID_ANIMATION_NODE, /// Invalid animation node
     SG_ERROR_INVALID_ANIMATION_CHANNEL, /// Invalid animation channel
+    SG_ERROR_EXCEPTION = 15, ///<An exception was raised, call SG_COM_GetExceptionText() for details
 } SG_Error;
 
 typedef enum {
